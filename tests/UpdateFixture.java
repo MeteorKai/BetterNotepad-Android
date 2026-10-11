@@ -151,8 +151,9 @@ public class UpdateFixture {
                 AppUpdater updater = new AppUpdater(activity, events::add); require(!new JSONObject(updater.info()).getBoolean("configured"));
                 updater.check(ID); require(await(updater, "error").getString("message").contains("尚未配置")); require(opened == 0); updater.close(); break;
             }
-            case "native-current": {
-                Activity activity = activity(directory); activity.pm.installed.versionName = "0.1.21";
+            case "native-current":
+            case "native-older": {
+                Activity activity = activity(directory); activity.pm.installed = test.equals("native-older") ? pkg("0.1.22", 23) : pkg("0.1.21", 22);
                 AppUpdater updater = new AppUpdater(activity, events::add); updater.check(ID); await(updater, "current");
                 updater.download(ID); await(updater, "error"); require(activity.intents.isEmpty()); updater.close(); break;
             }

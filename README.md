@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <code>v0.1.20</code> · <code>Android 8.0+</code> · <code>本地保存</code> · <a href="LICENSE">Apache-2.0</a>
+  <code>v0.1.21</code> · <code>Android 8.0+</code> · <code>本地保存</code> · <a href="LICENSE">Apache-2.0</a>
 </p>
 
 <p align="center">
@@ -25,17 +25,19 @@
 
 BetterNotepad Android 是独立的移动端项目。不同于电脑端的文件 Tab，手机主页直接展示便签卡片；点击卡片即可进入编辑，文字与图片统一操作，不需要编写 Markdown。
 
-> **当前状态**：0.1.20 已构建并通过回归测试。检查更新的入口与下载／安装流程已实现，但 Release 更新源尚未配置；小米真机兼容性和真实更新安装仍待验证。
+> **当前状态**：0.1.21 已接入本仓库的 Release 更新源并通过回归测试，真实 Release 信息读取与 APK 下载校验已验证；小米真机兼容性和覆盖安装仍待验证。
 
 ## 快速开始
 
-1. **安装**：如本仓库已发布 Release，从 Releases 下载 APK；尚未发布时，可按[构建说明](#开发与构建)自行生成安装包。
+1. **安装**：从 [Releases](https://github.com/MeteorKai/BetterNotepad-Android/releases) 下载 APK；未发布的源码版本可按[构建说明](#开发与构建)自行生成安装包。
 2. **记录**：新建便签，输入文字；将光标放在需要插图的位置，点击「+」选择照片，也可以添加标签和待办。
 3. **备份**：在设置中导出 ZIP，保存到应用之外。回收站、备份恢复和更新入口都在设置中，主页保持简洁。
 
 最低支持 **Android 8.0（API 26）**，需要 Android System WebView／Chrome。APK 不含架构专用原生库，可用于 ARM 和 x86 设备。
 
 > **更新不要先卸载。** 使用同一签名的更高版本 APK 覆盖安装。卸载或清除应用数据会删除本机便签、图片和回收站，请先导出重要内容。
+
+> **首次启用应用内更新**：0.1.20 的更新源为空，请先手动覆盖安装 0.1.21 或更高版本。之后可在设置中检查更新；只有正式 Release 中的更高版本会提供下载，不会降级。
 
 ## 功能亮点
 
@@ -49,7 +51,7 @@ BetterNotepad Android 是独立的移动端项目。不同于电脑端的文件 
 | **备份与回收站** | ZIP 备份包含便签、图片、回收站和已保存设置；恢复可合并或确认后替换。删除先进入回收站，不自动清空。 |
 | **桌面小组件** | 查看一篇便签的摘要、图片和待办，直接勾选或打开编辑；支持多个小组件和更换便签。 |
 | **主题与文案** | 暖色、浅色、深色三套主题；在设置中修改主页标题和副标题。 |
-| **检查更新** | 手动检查 GitHub 正式 Release，显示下载进度并打开系统安装界面；更新源当前留空，不自动检查。 |
+| **检查更新** | 手动检查本仓库的 GitHub 正式 Release，显示下载进度并打开系统安装界面；不自动检查，不提供降级安装。 |
 
 ## 数据与隐私
 
@@ -87,7 +89,7 @@ npm.cmd test
 npm.cmd run android:build
 ```
 
-当前安装包输出为 `artifacts/BetterNotepad-Android-0.1.20.apk`。
+当前安装包输出为 `artifacts/BetterNotepad-Android-0.1.21.apk`。
 
 <details>
 <summary>常用命令与目录结构</summary>
@@ -127,17 +129,17 @@ package-lock.json       固定前端依赖版本
 
 ## 发布与更新
 
-### 接入更新源
+### 已配置的更新源
 
-`android/app/src/main/res/values/strings.xml` 中的 `update_repository` **当前为空**。未配置时，「检查更新」只提示更新源未配置，不发起网络请求。
+应用使用 [MeteorKai/BetterNotepad-Android 的正式 Releases](https://github.com/MeteorKai/BetterNotepad-Android/releases) 作为更新源，仅在用户点击「检查更新」或「下载更新」时请求网络。
 
-拿到 GitHub 仓库地址后，按以下示例填入仓库标识，再重新构建 APK：
+`android/app/src/main/res/values/strings.xml` 中已配置：
 
 ```xml
-<string name="update_repository" translatable="false">owner/repository</string>
+<string name="update_repository" translatable="false">MeteorKai/BetterNotepad-Android</string>
 ```
 
-上面仅为配置示例，并非已启用的更新源。应用不收集 GitHub Token，仅支持公开仓库的正式 Release。
+Fork 后如需使用自己的更新源，修改该仓库标识并重新构建 APK。应用不收集 GitHub Token，仅支持公开仓库的正式 Release。
 
 ### 发布约定
 
@@ -172,9 +174,11 @@ package-lock.json       固定前端依赖版本
 
 ## 验证范围
 
-0.1.20 的 **221 项 Node／DOM／JVM 测试 + 4 项 APK 资源路径测试**通过，APK 的网页资源、版本和签名已校验。
+0.1.21 的 **223 项 Node／DOM／JVM 测试 + 4 项 APK 资源路径测试**通过，APK 的网页资源、版本、更新源和签名已校验。
 
-浏览器检查覆盖手机尺寸布局，**不等于小米触屏或系统安装验收**。真实 Release 下载及小米真机覆盖安装尚未验证。
+原生更新代码已在 JVM 环境下（使用 Windows 系统代理）读取本仓库的真实 Release 并下载 APK，核对文件大小、SHA-256 和原签名。回归测试覆盖相同版本与更旧版本不提供下载。
+
+浏览器检查覆盖手机尺寸布局，**不等于小米触屏或系统安装验收**。小米真机的真实下载与覆盖安装仍待验证。
 
 ## 许可证
 

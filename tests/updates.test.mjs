@@ -24,12 +24,17 @@ before(async () => {
 });
 
 for (const name of ["versions", "repository", "release", "assets", "network-errors", "download", "download-errors", "cancel", "redirects", "package-validation",
-  "native-empty", "native-current", "native-cancel", "native-permission", "native-old-android", "native-invalid-apk", "native-invalid-package", "native-cancel-install", "native-changed-apk", "native-installer-failure", "provider"]) {
+  "native-empty", "native-current", "native-older", "native-cancel", "native-permission", "native-old-android", "native-invalid-apk", "native-invalid-package", "native-cancel-install", "native-changed-apk", "native-installer-failure", "provider"]) {
   test(`native updater: ${name}`, () => {
     const result = execFileSync(java, ["-classpath", classpath, "com.betternotepad.android.UpdateFixture", name, directory], { encoding: "utf8", timeout: 15000 });
     assert.match(result, new RegExp(`PASS ${name}`));
   });
 }
+
+test("update source points to the public BetterNotepad Android releases", () => {
+  const resource = readFileSync(join(root, "android/app/src/main/res/values/strings.xml"), "utf8");
+  assert.match(resource, /name="update_repository"[^>]*>MeteorKai\/BetterNotepad-Android<\/string>/);
+});
 
 test("updater permissions and private APK sharing do not loosen the WebView boundary", () => {
   const manifest = readFileSync(join(root, "android/app/src/main/AndroidManifest.xml"), "utf8");
@@ -39,6 +44,4 @@ test("updater permissions and private APK sharing do not loosen the WebView boun
   const main = readFileSync(join(native, "MainActivity.java"), "utf8");
   assert.match(main, /connect-src 'none'/); assert.match(main, /if \(!isLocal\(uri\)\) return response\(403/);
   assert.match(main, /addJavascriptInterface\(updater, "BetterNotepadUpdates"\)/); assert.match(main, /updater.close\(\)/);
-  const resource = readFileSync(join(root, "android/app/src/main/res/values/strings.xml"), "utf8");
-  assert.match(resource, /name="update_repository"[^>]*><\/string>/);
 });
