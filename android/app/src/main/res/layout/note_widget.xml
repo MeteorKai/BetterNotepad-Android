@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/widget_root"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical"
+    android:padding="12dp" android:background="@drawable/widget_warm">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="44dp" android:gravity="center_vertical">
+        <TextView android:id="@+id/widget_title" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center_vertical"
+            android:text="BetterNotepad" android:textColor="#433a30" android:textSize="16sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end" />
+        <TextView android:id="@+id/widget_refresh" android:layout_width="44dp" android:layout_height="match_parent" android:gravity="center" android:text="↻" android:textSize="24sp" android:textColor="#854b2b" android:contentDescription="刷新小组件" />
+        <TextView android:id="@+id/widget_config" android:layout_width="44dp" android:layout_height="match_parent" android:gravity="center" android:text="⚙" android:textSize="21sp" android:textColor="#854b2b" android:contentDescription="更换小组件便签" />
+    </LinearLayout>
+    <TextView android:id="@+id/widget_body" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="6dp"
+        android:text="选择一篇便签，把想法留在桌面。" android:textSize="13sp" android:textColor="#706659" android:maxLines="3" android:ellipsize="end" />
+    <ImageView android:id="@+id/widget_image" android:layout_width="match_parent" android:layout_height="64dp" android:layout_marginBottom="6dp" android:scaleType="centerCrop" android:contentDescription="便签图片缩略图" android:visibility="gone" />
+    <LinearLayout android:id="@+id/widget_tasks" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" />
+    <TextView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+    <TextView android:id="@+id/widget_status" android:layout_width="match_parent" android:layout_height="20dp" android:gravity="center_vertical" android:text="点击进入编辑 · 长按可调整大小"
+        android:textSize="11sp" android:textColor="#706659" android:maxLines="1" android:ellipsize="end" />
+</LinearLayout>

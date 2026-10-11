@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_repository" translatable="false"></string>
+    <string name="widget_name">BetterNotepad 便签与待办</string>
+    <string name="widget_description">把一篇便签放在桌面，查看内容和勾选待办。</string>
+</resources>

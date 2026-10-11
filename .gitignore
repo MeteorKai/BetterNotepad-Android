@@ -1,0 +1,9 @@
+node_modules/
+dist/
+build/
+artifacts/
+.gradle/
+local.properties
+*.keystore
+.workbuddy/
+*.idsig
