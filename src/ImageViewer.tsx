@@ -7,10 +7,11 @@ type Transform = Point & { scale: number };
 const fit: Transform = { scale: 1, x: 0, y: 0 };
 const clamp = (value: number, limit: number) => Math.max(-limit, Math.min(limit, value));
 
-export default function ImageViewer({ path, onClose }: { path: string; onClose: () => void }) {
+export default function ImageViewer({ paths, initialIndex, onClose }: { paths: string[]; initialIndex: number; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
+  const [index, setIndex] = useState(initialIndex);
   const [transform, setTransform] = useState(fit);
   const current = useRef(fit);
   const [loaded, setLoaded] = useState(false);
@@ -18,8 +19,16 @@ export default function ImageViewer({ path, onClose }: { path: string; onClose: 
   const pointers = useRef(new Map<number, Point>());
   const gesture = useRef<{ center: Point; distance: number; transform: Transform } | null>(null);
   const start = useRef<Point | null>(null);
+  const swipe = useRef<Point | null>(null);
   const moved = useRef(false);
   const lastTap = useRef<{ time: number; point: Point } | null>(null);
+
+  function changeImage(direction: number) {
+    const next = index + direction;
+    if (next < 0 || next >= paths.length) return;
+    pointers.current.clear(); gesture.current = null; start.current = null; swipe.current = null; lastTap.current = null;
+    apply(fit); setLoaded(false); setError(false); setIndex(next);
+  }
 
   function apply(value: Transform) {
     const scale = Math.max(1, Math.min(4, value.scale));
@@ -29,6 +38,7 @@ export default function ImageViewer({ path, onClose }: { path: string; onClose: 
     current.current = next; setTransform(next);
   }
   function zoom(scale: number, point?: Point) {
+    swipe.current = null;
     const previous = current.current;
     const rect = viewport.current!.getBoundingClientRect();
     const x = point ? point.x - rect.left - rect.width / 2 : 0;
@@ -48,11 +58,11 @@ export default function ImageViewer({ path, onClose }: { path: string; onClose: 
     gesture.current = position ? { ...position, transform: current.current } : null;
   }
   function down(event: PointerEvent<HTMLDivElement>) {
-    if (!loaded || event.button > 0 || pointers.current.size >= 2) return;
+    if (event.button > 0 || pointers.current.size >= 2) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = { x: event.clientX, y: event.clientY };
-    if (!pointers.current.size) { start.current = point; moved.current = false; }
-    else moved.current = true;
+    if (!pointers.current.size) { start.current = point; moved.current = false; swipe.current = current.current.scale === 1 ? point : null; }
+    else { moved.current = true; swipe.current = null; }
     pointers.current.set(event.pointerId, point); resetGesture();
   }
   function move(event: PointerEvent<HTMLDivElement>) {
@@ -60,6 +70,7 @@ export default function ImageViewer({ path, onClose }: { path: string; onClose: 
     const point = { x: event.clientX, y: event.clientY };
     if (start.current && Math.hypot(point.x - start.current.x, point.y - start.current.y) > 6) moved.current = true;
     pointers.current.set(event.pointerId, point);
+    if (!loaded) return;
     const position = positions()!, base = gesture.current;
     const scale = Math.max(1, Math.min(4, base.transform.scale * (base.distance > 0 ? position.distance / base.distance : 1)));
     const rect = viewport.current!.getBoundingClientRect(), ratio = scale / base.transform.scale;
@@ -69,7 +80,12 @@ export default function ImageViewer({ path, onClose }: { path: string; onClose: 
   }
   function up(event: PointerEvent<HTMLDivElement>, cancelled = false) {
     if (!pointers.current.delete(event.pointerId)) return;
-    if (!cancelled && !pointers.current.size && !moved.current) {
+    const from = swipe.current;
+    swipe.current = null;
+    const dx = from ? event.clientX - from.x : 0, dy = from ? event.clientY - from.y : 0;
+    if (!cancelled && !pointers.current.size && from && current.current.scale === 1 && Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      lastTap.current = null; changeImage(dx < 0 ? 1 : -1);
+    } else if (!cancelled && !pointers.current.size && !moved.current && loaded) {
       const now = Date.now(), point = { x: event.clientX, y: event.clientY }, previous = lastTap.current;
       if (previous && now - previous.time < 300 && Math.hypot(previous.point.x - point.x, previous.point.y - point.y) < 25) {
         zoom(current.current.scale > 1 ? 1 : 2, point); lastTap.current = null;
@@ -79,18 +95,18 @@ export default function ImageViewer({ path, onClose }: { path: string; onClose: 
   }
   useEffect(() => {
     const element = dialog.current!; element.showModal();
-    const resize = () => { pointers.current.clear(); gesture.current = null; lastTap.current = null; apply(fit); };
+    const resize = () => { pointers.current.clear(); gesture.current = null; start.current = null; swipe.current = null; lastTap.current = null; apply(fit); };
     window.addEventListener("resize", resize);
     return () => { element.close(); window.removeEventListener("resize", resize); };
   }, []);
 
   return <dialog ref={dialog} className="image-viewer" aria-label="图片大图查看" onCancel={event => { event.preventDefault(); onClose(); }}>
-    <header><span>图片</span><button autoFocus className="icon-button" aria-label="关闭大图" onClick={onClose}><Icon name="close" /></button></header>
+    <header><span role="status" aria-label="图片序号">图片 {index + 1} / {paths.length}</span>{paths.length > 1 && <><button className="icon-button image-step" aria-label="上一张图片" disabled={index === 0} onClick={() => changeImage(-1)}><Icon name="back" /></button><button className="icon-button image-step" aria-label="下一张图片" disabled={index === paths.length - 1} onClick={() => changeImage(1)}><Icon name="arrow" /></button></>}<button autoFocus className="icon-button" aria-label="关闭大图" onClick={onClose}><Icon name="close" /></button></header>
     <div className="image-viewport" ref={viewport} onPointerDown={down} onPointerMove={move} onPointerUp={event => up(event)} onPointerCancel={event => up(event, true)} onLostPointerCapture={event => up(event, true)}>
-      <img ref={image} src={path} alt="便签图片大图" draggable={false} style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`, visibility: loaded ? "visible" : "hidden" }} onLoad={() => { setLoaded(true); apply(current.current); }} onError={() => { setError(true); setLoaded(false); }} />
-      {!loaded && <p role={error ? "alert" : "status"}>{error ? "图片暂时无法读取，请关闭后重试。" : "正在读取图片…"}</p>}
+      <img key={index} ref={image} src={paths[index]} alt="便签图片大图" draggable={false} style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`, visibility: loaded ? "visible" : "hidden" }} onLoad={() => { setLoaded(true); apply(current.current); }} onError={() => { setError(true); setLoaded(false); }} />
+      {!loaded && <p role={error ? "alert" : "status"}>{error ? `图片暂时无法读取，请${paths.length > 1 ? "切换图片或" : ""}关闭后重试。` : "正在读取图片…"}</p>}
     </div>
-    <footer><button className="icon-button" aria-label="缩小图片" disabled={!loaded || transform.scale <= 1} onClick={() => zoom(current.current.scale - .5)}><Icon name="minus" /></button><span role="status">{Math.round(transform.scale * 100)}%</span><button className="icon-button" aria-label="放大图片" disabled={!loaded || transform.scale >= 4} onClick={() => zoom(current.current.scale + .5)}><Icon name="plus" /></button><button disabled={!loaded} onClick={() => { apply(fit); resetGesture(); }}>适应屏幕</button></footer>
-    <p className="image-gesture-hint">双指缩放 · 放大后拖动 · 双击放大或复原</p>
+    <footer><button className="icon-button" aria-label="缩小图片" disabled={!loaded || transform.scale <= 1} onClick={() => zoom(current.current.scale - .5)}><Icon name="minus" /></button><span role="status">{Math.round(transform.scale * 100)}%</span><button className="icon-button" aria-label="放大图片" disabled={!loaded || transform.scale >= 4} onClick={() => zoom(current.current.scale + .5)}><Icon name="plus" /></button><button disabled={!loaded} onClick={() => { swipe.current = null; apply(fit); resetGesture(); }}>适应屏幕</button></footer>
+    <p className="image-gesture-hint">{paths.length > 1 && "未放大时左右滑动切换 · "}双指缩放 · 放大后拖动 · 双击放大或复原</p>
   </dialog>;
 }

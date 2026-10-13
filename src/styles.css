@@ -183,13 +183,14 @@ input::placeholder { color: var(--faint); }
 .todo-check input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 3px; }
 .todo-text { min-width: 0; flex: 1; border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 12px 2px; font-size: 14px; min-height: 44px; }
 .todo-row.done .todo-text { text-decoration: line-through; color: var(--sub); } .todo-row > button { color: var(--sub); }
-.view-image { display: block; max-width: 100%; padding: 0; cursor: zoom-in; border-radius: 14px; }
+.view-image { display: block; max-width: 100%; padding: 0; cursor: zoom-in; border-radius: 4px; }
 .view-image:active { transform: none; }
 .image-viewer { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; padding: max(8px, env(safe-area-inset-top)) 12px max(8px, env(safe-area-inset-bottom)); border: 0; background: #141217; color: #fff; }
 .image-viewer[open] { display: flex; flex-direction: column; }
 .image-viewer::backdrop { background: #141217; }
 .image-viewer header, .image-viewer footer { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.image-viewer header > span { font-size: 13px; color: #ddd6e3; } .image-viewer header > button { margin-left: auto; }
+.image-viewer header > span { font-size: 13px; color: #ddd6e3; margin-right: auto; }
+.image-step:disabled { opacity: .35; cursor: default; }
 .image-viewer footer { justify-content: center; } .image-viewer footer > span { min-width: 48px; font-size: 12px; text-align: center; }
 .image-viewer footer > button:last-child { min-height: 44px; padding: 8px 12px; border-radius: 12px; font-size: 12px; background: #ffffff18; }
 .image-viewport { flex: 1; min-height: 0; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; touch-action: none; user-select: none; }
@@ -202,10 +203,14 @@ input::placeholder { color: var(--faint); }
 @media (max-width: 350px) { .editor-tools { margin-left: 18px; margin-right: 18px; } }
 .editor-pane, .editor-host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .editor-host > .cm-editor { flex: 1; min-height: 0; font-size: 16px; }
-.inline-image { padding: 12px 0; }
-.inline-image img { display: block; max-width: 100%; height: auto; border-radius: 14px; background: var(--surface); }
+.inline-image { position: relative; margin: 12px 0 0; }
+.inline-image img { display: block; max-width: 100%; height: auto; border-radius: 4px; }
 .inline-image img { max-height: 440px; object-fit: contain; }
-.remove-image { display: block; min-height: 44px; margin-left: auto; padding: 0 10px; color: var(--sub); font-size: 11px; }
+.remove-image { position: absolute; right: 0; bottom: 0; min-height: 48px; min-width: 48px; padding: 0 8px; color: var(--faint); font-size: 11px; }
+.image-input-gap { display: block; width: 100%; min-height: 48px; padding: 0; cursor: text; }
+.image-input-gap:active { transform: none; }
+.image-input-gap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.image-removal-preview { display: block; width: 100%; max-height: 144px; object-fit: contain; border-radius: 12px; background: var(--surface); margin: 12px 0; }
 .image-unavailable::before { content: "图片暂时无法显示"; display: block; padding: 18px; color: var(--sub); background: var(--surface); border-radius: 14px; }
 .image-unavailable img { display: none; }
 .editor-footer { padding: 13px 24px max(13px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); color: var(--faint); font-size: 10px; gap: 12px; }

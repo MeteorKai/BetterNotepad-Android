@@ -24,3 +24,10 @@ export function imageInsertion(content, from, to, path) {
   const insert = (from > 0 && content[from - 1] !== "\n" ? "\n" : "") + `![图片](${path})\n`;
   return { changes: { from, to, insert }, selection: { anchor: from + insert.length }, scrollIntoView: true, userEvent: "input" };
 }
+
+export function textAfterImage(content, end) {
+  const hasBreak = content[end] === "\n";
+  const from = hasBreak ? end + 1 : end;
+  const insert = hasBreak ? (from === content.length || content[from] === "\n" ? "" : "\n") : (from === content.length ? "\n" : "\n\n");
+  return { changes: { from, insert }, selection: { anchor: hasBreak ? from : from + 1 }, scrollIntoView: true, userEvent: insert ? "input" : "select" };
+}

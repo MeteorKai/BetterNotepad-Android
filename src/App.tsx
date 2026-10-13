@@ -35,7 +35,7 @@ export default function App() {
   const [tagFilter, setTagFilter] = useState("all");
   const [editingTags, setEditingTags] = useState(false);
   const [focusTodo, setFocusTodo] = useState<string | null>(null);
-  const [viewImage, setViewImage] = useState<string | null>(null);
+  const [viewImage, setViewImage] = useState<{ paths: string[]; index: number } | null>(null);
   const [selecting, setSelecting] = useState(false);
   const [sorting, setSorting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -43,12 +43,14 @@ export default function App() {
   const [deleteFailed, setDeleteFailed] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const [imageError, setImageError] = useState("");
+  const [confirmImageRemoval, setConfirmImageRemoval] = useState<{ noteId: string; path: string; remove: () => boolean } | null>(null);
   const editor = useRef<EditorHandle>(null);
   const settings = useRef<SettingsHandle>(null);
   const pendingImage = useRef<{ requestId: string; noteId: string; insert: (path: string | null) => boolean } | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const searchField = useRef<HTMLInputElement>(null);
   const reloadDialog = useRef<HTMLDialogElement>(null);
+  const imageRemovalDialog = useRef<HTMLDialogElement>(null);
   const resumeHandler = useRef<(noteId: string | null) => boolean>(() => false);
   const note = data.notes.find(item => item.id === activeId);
   const searching = page === "search";
@@ -116,6 +118,7 @@ export default function App() {
   }
   function back() {
     if (confirmReload) { setConfirmReload(false); return true; }
+    if (confirmImageRemoval) { cancelImageRemoval(); return true; }
     if (viewImage) { setViewImage(null); return true; }
     if (editingTags) { setEditingTags(false); return true; }
     if (page === "settings" && settings.current?.back()) return true;
@@ -128,7 +131,7 @@ export default function App() {
   }
 
   function resume(noteId: string | null) {
-    if (saveError || syncFailed || pendingImage.current || settings.current?.syncBlocked()) return false;
+    if (saveError || syncFailed || pendingImage.current || confirmImageRemoval || settings.current?.syncBlocked()) return false;
     try {
       const latest = loadState(window.localStorage, window.BetterNotepad) as Notebook;
       if (JSON.stringify(latest) !== JSON.stringify(data)) {
@@ -175,6 +178,13 @@ export default function App() {
     }
   }
 
+  function cancelImageRemoval() { imageRemovalDialog.current?.close(); setConfirmImageRemoval(null); }
+  function removeImageConfirmed() {
+    const request = confirmImageRemoval;
+    cancelImageRemoval();
+    if (!request || request.noteId !== activeId || !request.remove()) setImageError("图片已变化，请重新选择要移除的图片。");
+  }
+
   useEffect(() => {
     document.documentElement.dataset.theme = data.theme;
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", data.theme === "dark" ? "#1c1a21" : data.theme === "light" ? "#f7f8fb" : "#f8f3eb");
@@ -193,7 +203,7 @@ export default function App() {
         setImageError(result.error || (activeId !== request.noteId ? "便签已切换，请重新选择图片。" : "图片读取失败，请重新选择。"));
         return;
       }
-      if (!request.insert(result.path!)) setImageError("未能插入图片，请重试。");
+      if (!request.insert(result.path!)) setImageError("未能插入图片，请点击正文或图片下方的留白重新定位后重试。");
     };
     return () => { delete window.betterNotepadBack; delete window.betterNotepadImageResult; };
   });
@@ -211,8 +221,10 @@ export default function App() {
     window.betterNotepadResume = id => resumeHandler.current(id);
     return () => { delete window.betterNotepadResume; };
   }, []);
-  useEffect(() => { if (!saveError && !imageBusy) window.BetterNotepad?.ready?.(); }, [saveError, imageBusy]);
+  useEffect(() => { if (!saveError && !imageBusy && !confirmImageRemoval) window.BetterNotepad?.ready?.(); }, [saveError, imageBusy, confirmImageRemoval]);
   useEffect(() => { if (confirmReload) reloadDialog.current?.showModal(); else reloadDialog.current?.close(); }, [confirmReload]);
+  useEffect(() => { if (confirmImageRemoval) imageRemovalDialog.current?.showModal(); }, [confirmImageRemoval]);
+  useEffect(() => { cancelImageRemoval(); }, [activeId, editorVersion]);
 
   if (initial.error) return <main className="load-error">
     <Icon name="note" size={40} /><h1>便签暂时无法读取</h1>
@@ -275,12 +287,18 @@ export default function App() {
       </div>
       <div className="editor-pane">
         {!!note.todos?.length && <Checklist key={`todos-${note.id}`} todos={note.todos} focusId={focusTodo} onAdd={addTodo} onChange={todos => edit({ todos })} />}
-        <Editor ref={editor} key={`${note.id}-${editorVersion}`} content={note.content} onChange={content => edit({ content })} onViewImage={path => { if (isImagePath(path)) setViewImage(path); }} />
+        <Editor ref={editor} key={`${note.id}-${editorVersion}`} content={note.content} onChange={content => edit({ content })} onViewImage={(paths, index) => setViewImage({ paths, index })} onRemoveImage={(path, remove) => setConfirmImageRemoval({ noteId: note.id, path, remove })} />
       </div>
       <footer className="editor-footer"><span className="editor-format"><Icon name="note" size={13} />文字 · 图片</span></footer>
     </main>}
     {note && editingTags && <TagEditor tags={note.tags ?? []} available={tags} saveError={saveError} onChange={tags => edit({ tags })} onClose={() => setEditingTags(false)} />}
-    {viewImage && <ImageViewer key={viewImage} path={viewImage} onClose={() => setViewImage(null)} />}
+    {viewImage && <ImageViewer paths={viewImage.paths} initialIndex={viewImage.index} onClose={() => setViewImage(null)} />}
+    {confirmImageRemoval && <dialog ref={imageRemovalDialog} className="confirm-dialog" aria-labelledby="image-removal-title" aria-describedby="image-removal-description" onCancel={event => { event.preventDefault(); cancelImageRemoval(); }}>
+      <h2 id="image-removal-title">移除这张图片？</h2>
+      <img className="image-removal-preview" src={confirmImageRemoval.path} alt="待移除的图片" />
+      <p id="image-removal-description">只移除这张图片，正文和其他图片不受影响。移除后可通过撤销恢复。</p>
+      <div><button autoFocus onClick={cancelImageRemoval}>保留图片</button><button className="danger" onClick={removeImageConfirmed}>确认移除</button></div>
+    </dialog>}
     {confirmReload && <dialog ref={reloadDialog} className="confirm-dialog" aria-labelledby="reload-title" onCancel={event => { event.preventDefault(); setConfirmReload(false); }}>
       <h2 id="reload-title">重新读取本机便签？</h2><p>会放弃当前尚未保存的修改，使用最新保存的便签与桌面待办状态。本机文件不会被改动；如需保留草稿，请先取消并复制文字。</p>
       {confirmReload && saveError && <p className="delete-error">{saveError}</p>}

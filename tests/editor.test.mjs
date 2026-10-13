@@ -4,7 +4,7 @@ import React, { act } from "react";
 import { JSDOM } from "jsdom";
 import { createServer } from "vite";
 import { EditorView } from "@codemirror/view";
-import { undo, redo, deleteCharBackward } from "@codemirror/commands";
+import { undo, redo, deleteCharBackward, deleteCharForward } from "@codemirror/commands";
 import { createNote, DEFAULT_HOME, emptyState } from "../src/notes.mjs";
 import { imageBlocks } from "../src/images.mjs";
 import { createHash } from "node:crypto";
@@ -711,8 +711,11 @@ test("failed checklist writes keep drafts visible and retry saves all task chang
   assert.equal(JSON.parse(saved).notes[0].content, "原正文"); assert.ok(!document.querySelector('.error-banner'));
 });
 
-async function prepareViewer() {
-  await click(document.querySelector('.view-image'));
+async function prepareViewer(index = 0) {
+  await click(document.querySelectorAll('.view-image')[index]);
+  return loadViewerImage();
+}
+async function loadViewerImage() {
   const viewport = document.querySelector('.image-viewport'), image = viewport.querySelector('img');
   Object.defineProperties(viewport, { clientWidth: { value: 300, configurable: true }, clientHeight: { value: 400, configurable: true } });
   Object.defineProperties(image, { clientWidth: { value: 300, configurable: true }, clientHeight: { value: 400, configurable: true } });
@@ -771,6 +774,151 @@ test("failed large image loading disables zoom but keeps a working close control
   assert.match(document.querySelector('.image-viewer [role="alert"]').textContent, /无法读取/);
   assert.equal(document.querySelector('[aria-label="放大图片"]').disabled, true);
   await click(document.querySelector('[aria-label="关闭大图"]')); assert.equal(saved, baseline);
+});
+
+const galleryPaths = [path, "/images/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png", "/images/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.jpg"];
+const galleryContent = galleryPaths.map(value => `![图片](${value})`).join("\n正文\n");
+const galleryImage = () => document.querySelector(".image-viewer img");
+const galleryCounter = () => document.querySelector('[aria-label="图片序号"]').textContent;
+async function swipeGallery(fromX, toX, fromY = 200, toY = fromY, endType = "pointerup") {
+  const viewport = document.querySelector(".image-viewport");
+  await pointer(viewport, "pointerdown", 1, fromX, fromY);
+  await pointer(viewport, "pointermove", 1, toX, toY);
+  await pointer(viewport, endType, 1, toX, toY);
+}
+
+test("image gallery opens the clicked occurrence and swipes in the current note's body order without saving", async () => {
+  await mount(galleryContent + "\n![外部](https://example.test/a.jpg)");
+  const baseline = saved, editor = view(), selection = editor.state.selection.main.from;
+  await prepareViewer(1);
+  assert.equal(galleryImage().getAttribute("src"), galleryPaths[1]);
+  assert.equal(galleryCounter(), "图片 2 / 3");
+  await swipeGallery(240, 80);
+  assert.equal(galleryImage().getAttribute("src"), galleryPaths[2]);
+  assert.equal(galleryCounter(), "图片 3 / 3");
+  await loadViewerImage(); await swipeGallery(80, 240);
+  assert.equal(galleryImage().getAttribute("src"), galleryPaths[1]);
+  assert.equal(galleryCounter(), "图片 2 / 3");
+  await act(() => { assert.equal(window.betterNotepadBack(), true); });
+  assert.equal(saved, baseline);
+  assert.equal(editor.state.selection.main.from, selection);
+  assert.equal(view(), editor);
+});
+
+test("image gallery clamps both ends, disables boundary controls, and keeps single-image viewers simple", async () => {
+  await mount(galleryContent); await prepareViewer();
+  assert.equal(document.querySelector('[aria-label="上一张图片"]').disabled, true);
+  await swipeGallery(80, 240); assert.equal(galleryCounter(), "图片 1 / 3");
+  await click(document.querySelector('[aria-label="下一张图片"]'));
+  await click(document.querySelector('[aria-label="下一张图片"]'));
+  assert.equal(galleryCounter(), "图片 3 / 3");
+  assert.equal(document.querySelector('[aria-label="下一张图片"]').disabled, true);
+  await loadViewerImage(); await swipeGallery(240, 80); assert.equal(galleryCounter(), "图片 3 / 3");
+  await click(document.querySelector('[aria-label="关闭大图"]'));
+  await prepareViewer(1); assert.equal(galleryCounter(), "图片 2 / 3");
+  await click(document.querySelector('[aria-label="上一张图片"]')); assert.equal(galleryCounter(), "图片 1 / 3");
+  await act(() => root.unmount()); root = null;
+  await mount(marker); await prepareViewer();
+  assert.equal(galleryCounter(), "图片 1 / 1");
+  assert.equal(document.querySelector('[aria-label="下一张图片"]'), null);
+  assert.equal(document.querySelector('[aria-label="上一张图片"]'), null);
+  await swipeGallery(240, 80); assert.equal(galleryImage().getAttribute("src"), path);
+});
+
+test("short, vertical and diagonal drags do not accidentally change gallery images", async () => {
+  await mount(galleryContent); await prepareViewer(1);
+  for (const [x, y] of [[220, 200], [220, 80], [160, 120]]) {
+    await swipeGallery(240, x, 200, y);
+    assert.equal(galleryCounter(), "图片 2 / 3");
+    assert.match(galleryImage().style.transform, /scale\(1\)/);
+  }
+});
+
+test("zoomed dragging stays on the current image and navigation resets zoom and pan", async () => {
+  await mount(galleryContent); await prepareViewer(1);
+  await click(document.querySelector('[aria-label="放大图片"]'));
+  await swipeGallery(240, 80);
+  assert.equal(galleryCounter(), "图片 2 / 3");
+  assert.match(galleryImage().style.transform, /scale\(1\.5\)/);
+  await click(document.querySelector('[aria-label="下一张图片"]'));
+  assert.match(galleryImage().style.transform, /translate\(0px, 0px\) scale\(1\)/);
+  assert.equal(document.querySelector('[aria-label="放大图片"]').disabled, true);
+  await loadViewerImage(); await swipeGallery(80, 240);
+  assert.equal(galleryCounter(), "图片 2 / 3");
+  const { viewport } = await loadViewerImage();
+  await pointer(viewport, "pointerdown", 1, 80, 200);
+  await pointer(viewport, "pointermove", 1, 240, 200);
+  await click(button("适应屏幕"));
+  await pointer(viewport, "pointerup", 1, 240, 200);
+  assert.equal(galleryCounter(), "图片 2 / 3");
+});
+
+test("pinching and the remaining finger after a pinch never become a gallery swipe", async () => {
+  await mount(galleryContent); const { viewport } = await prepareViewer(1);
+  await pointer(viewport, "pointerdown", 1, 100, 200);
+  await pointer(viewport, "pointerdown", 2, 200, 200);
+  await pointer(viewport, "pointermove", 2, 300, 200);
+  assert.match(galleryImage().style.transform, /scale\(2\)/);
+  await pointer(viewport, "pointermove", 2, 150, 200);
+  assert.match(galleryImage().style.transform, /scale\(1\)/);
+  await pointer(viewport, "pointerup", 2, 150, 200);
+  await pointer(viewport, "pointermove", 1, 240, 200);
+  await pointer(viewport, "pointerup", 1, 240, 200);
+  assert.equal(galleryCounter(), "图片 2 / 3");
+});
+
+test("cancelled, lost-capture and resized gestures cannot change gallery images", async () => {
+  await mount(galleryContent); const { viewport } = await prepareViewer(1);
+  for (const end of ["pointercancel", "lostpointercapture"]) {
+    await swipeGallery(240, 80, 200, 200, end);
+    await pointer(viewport, "pointerup", 1, 80, 200);
+    assert.equal(galleryCounter(), "图片 2 / 3");
+  }
+  await pointer(viewport, "pointerdown", 1, 240, 200);
+  await pointer(viewport, "pointermove", 1, 80, 200);
+  await act(() => window.dispatchEvent(new window.Event("resize")));
+  await pointer(viewport, "pointerup", 1, 80, 200);
+  assert.equal(galleryCounter(), "图片 2 / 3");
+  await swipeGallery(240, 80); assert.equal(galleryCounter(), "图片 3 / 3");
+});
+
+test("missing or loading gallery images can be skipped and old image callbacks cannot affect their replacement", async () => {
+  await mount(galleryContent); await click(document.querySelector(".view-image"));
+  const viewport = document.querySelector(".image-viewport"); viewport.setPointerCapture = () => {};
+  const old = galleryImage();
+  await act(() => old.dispatchEvent(new window.Event("error")));
+  assert.match(document.querySelector(".image-viewer [role=alert]").textContent, /无法读取/);
+  await swipeGallery(240, 80);
+  assert.equal(galleryCounter(), "图片 2 / 3");
+  assert.equal(document.querySelector(".image-viewer [role=alert]"), null);
+  assert.match(document.querySelector(".image-viewer [role=status]").textContent + document.querySelector(".image-viewport").textContent, /正在读取/);
+  await act(() => old.dispatchEvent(new window.Event("load")));
+  assert.equal(document.querySelector('[aria-label="放大图片"]').disabled, true);
+  await swipeGallery(240, 80); assert.equal(galleryCounter(), "图片 3 / 3");
+  await loadViewerImage(); assert.equal(document.querySelector('[aria-label="放大图片"]').disabled, false);
+});
+
+test("duplicate image paths retain their individual positions instead of opening the first duplicate", async () => {
+  await mount(`${marker}\n${marker}\n![图片](${galleryPaths[2]})`);
+  await prepareViewer(1); assert.equal(galleryCounter(), "图片 2 / 3");
+  await swipeGallery(240, 80);
+  assert.equal(galleryImage().getAttribute("src"), galleryPaths[2]);
+  await loadViewerImage(); await swipeGallery(80, 240); await loadViewerImage(); await swipeGallery(80, 240);
+  assert.equal(galleryCounter(), "图片 1 / 3");
+  assert.equal(galleryImage().getAttribute("src"), path);
+});
+
+test("gallery reads the live editor draft and viewing never discards or saves a failed notebook write", async () => {
+  await mount(marker, "text", true); const baseline = saved, editor = view();
+  const insert = `\n![图片](${galleryPaths[1]})\n![图片](${galleryPaths[2]})`;
+  await act(() => editor.dispatch({ changes: { from: editor.state.doc.length, insert }, userEvent: "input.type" }));
+  const draft = editor.state.doc.toString();
+  await prepareViewer(1); assert.equal(galleryCounter(), "图片 2 / 3");
+  await swipeGallery(240, 80); assert.equal(galleryImage().getAttribute("src"), galleryPaths[2]);
+  await click(document.querySelector('[aria-label="关闭大图"]'));
+  assert.equal(view().state.doc.toString(), draft);
+  assert.equal(saved, baseline);
+  assert.match(document.querySelector(".save-status").textContent, /尚未保存/);
 });
 
 async function openSettings() {
@@ -1324,6 +1472,7 @@ test("insert, remove, undo and redo preserve surrounding text", async () => {
   await act(() => redo(view()));
   assert.equal(imageBlocks(JSON.parse(saved).notes[0].content).length, 1);
   await click(document.querySelector(".remove-image"));
+  await click(document.querySelector('dialog[open] .danger'));
   assert.equal(JSON.parse(saved).notes[0].content, "前文\n后文");
   await act(() => undo(view()));
   assert.equal(document.querySelectorAll(".inline-image img").length, 1);
@@ -1406,7 +1555,173 @@ test("backspace after an image does not reveal hidden image markup", async () =>
   await act(() => deleteCharBackward(editor));
   assert.doesNotMatch(document.querySelector(".cm-content").textContent, /!\[图片\]/);
   await click(document.querySelector(".remove-image"));
+  await click(document.querySelector('dialog[open] .danger'));
   assert.equal(JSON.parse(saved).notes[0].content, "前文\n后文");
+});
+
+test("backspace at an image boundary does not silently erase an adjacent picture", async () => {
+  const other = "![图片](/images/ffffffffffffffffffffffffffffffff.png)";
+  await mount(`${marker}\n${other}\n正文`);
+  const editor = view(), baseline = saved;
+  await act(() => editor.dispatch({ selection: { anchor: marker.length } }));
+  await act(() => deleteCharBackward(editor));
+  assert.equal(saved, baseline);
+  assert.equal(imageBlocks(editor.state.doc.toString()).length, 2);
+  assert.equal(editor.state.selection.main.from, marker.length);
+});
+
+test("removing a picture requires confirmation rather than a single accidental tap", async () => {
+  await mount(`前文\n${marker}\n后文`);
+  const baseline = saved;
+  await click(document.querySelector(".remove-image"));
+  assert.equal(saved, baseline);
+  assert.match(document.querySelector('dialog[open]').textContent, /移除这张图片/);
+});
+
+test("image input gaps create a real writable line between adjacent pictures without rewriting their markers", async () => {
+  const other = "![图片](/images/ffffffffffffffffffffffffffffffff.png)";
+  await mount(`${marker}\n${other}\n后文`);
+  await click(document.querySelector(".image-input-gap"));
+  const editor = view(), position = marker.length + 1;
+  assert.equal(editor.state.doc.toString(), `${marker}\n\n${other}\n后文`);
+  assert.equal(editor.state.selection.main.from, position);
+  const baseline = saved;
+  await click(document.querySelector(".image-input-gap"));
+  assert.equal(saved, baseline);
+  await act(() => editor.dispatch({ changes: { from: position, insert: "中间文字" }, userEvent: "input.type" }));
+  assert.equal(JSON.parse(saved).notes[0].content, `${marker}\n中间文字\n${other}\n后文`);
+  assert.equal(document.querySelectorAll(".inline-image").length, 2);
+  assert.equal(JSON.parse(saved).notes[1].content, "不能丢失");
+  await restart(); await click(document.querySelector('[aria-label="打开便签：测试便签"]'));
+  assert.equal(view().state.doc.toString(), `${marker}\n中间文字\n${other}\n后文`);
+});
+
+test("inline pictures render naturally without cards or visible input prompts while retaining accessible controls", async () => {
+  await mount(`前文\n${marker}\n${marker}\n后文`);
+  const pictures = document.querySelectorAll(".inline-image");
+  assert.equal(pictures.length, 2);
+  for (const picture of pictures) {
+    assert.equal(picture.querySelector(".image-frame, .image-actions"), null);
+    assert.doesNotMatch(picture.textContent, /图片已保护|点此输入文字/);
+    const gap = picture.querySelector(".image-input-gap");
+    assert.equal(gap.tagName, "BUTTON");
+    assert.equal(gap.textContent, "");
+    assert.equal(gap.getAttribute("aria-label"), "在这张图片下方输入文字");
+    assert.equal(picture.querySelector(".view-image").getAttribute("aria-label"), "查看图片大图");
+    assert.equal(picture.querySelector(".remove-image").getAttribute("aria-label"), "移除这张图片（需确认）");
+  }
+  assert.equal(view().state.doc.toString(), `前文\n${marker}\n${marker}\n后文`);
+});
+
+test("a gap between legacy same-line images accepts another inserted picture without losing either neighbor", async () => {
+  const other = "![图片](/images/ffffffffffffffffffffffffffffffff.png)";
+  await mount(`${marker}${other}`);
+  await click(document.querySelector(".image-input-gap"));
+  assert.equal(view().state.doc.toString(), `${marker}\n\n${other}`);
+  await selectImage();
+  assert.equal(imageBlocks(JSON.parse(saved).notes[0].content).length, 3);
+  assert.equal(document.querySelectorAll(".inline-image").length, 3);
+  assert.ok(view().state.doc.toString().startsWith(`${marker}\n`));
+  assert.ok(view().state.doc.toString().endsWith(other));
+});
+
+test("cancel, Android back and dialog cancel all retain the picture and stay in its editor", async () => {
+  await mount(marker);
+  const baseline = saved;
+  for (const action of ["button", "back", "cancel"]) {
+    await click(document.querySelector(".remove-image"));
+    const dialog = document.querySelector("dialog[open]");
+    assert.equal(dialog.querySelector("img").getAttribute("src"), path);
+    if (action === "button") await click(dialog.querySelector("button:not(.danger)"));
+    else if (action === "back") await act(() => { assert.equal(window.betterNotepadBack(), true); });
+    else await act(() => dialog.dispatchEvent(new window.Event("cancel", { cancelable: true })));
+    assert.equal(saved, baseline);
+    assert.ok(!document.querySelector("dialog[open]"));
+    assert.ok(document.querySelector(".note-page .inline-image"));
+  }
+});
+
+test("confirmed removal targets the second of identical pictures, preserves text, and has reversible history", async () => {
+  await mount(`前文\n${marker}\n${marker}\n后文`);
+  const baseline = saved;
+  await click(document.querySelectorAll(".remove-image")[1]);
+  assert.equal(saved, baseline);
+  await act(() => view().dispatch({ changes: { from: 0, insert: "新增" }, userEvent: "input.type" }));
+  await click(document.querySelector('dialog[open] .danger'));
+  assert.equal(view().state.doc.toString(), `新增前文\n${marker}\n后文`);
+  assert.equal(imageBlocks(JSON.parse(saved).notes[0].content).length, 1);
+  await act(() => undo(view()));
+  assert.equal(view().state.doc.toString(), `新增前文\n${marker}\n${marker}\n后文`);
+  await act(() => redo(view()));
+  assert.equal(view().state.doc.toString(), `新增前文\n${marker}\n后文`);
+});
+
+test("image protection also blocks forward delete, Android IME edits, cuts and replacement pastes", async () => {
+  await mount(`前文\n${marker}\n后文`);
+  const editor = view(), block = imageBlocks(editor.state.doc.toString())[0], baseline = saved;
+  await act(() => editor.dispatch({ selection: { anchor: block.from } }));
+  await act(() => deleteCharForward(editor));
+  assert.equal(saved, baseline);
+  assert.equal(editor.state.selection.main.from, block.from);
+  for (const userEvent of ["delete.backward", "input.type.compose", "delete.cut", "input.paste"]) {
+    await act(() => editor.dispatch({ changes: { from: block.from + 1, to: block.to - 1, insert: userEvent === "input.paste" ? "替换文字" : "" }, userEvent }));
+    assert.equal(saved, baseline);
+    assert.equal(editor.state.selection.main.from, block.from);
+  }
+  await act(() => editor.dispatch({ changes: [{ from: 0, to: 1, insert: "改" }, { from: editor.state.doc.length - 1, insert: "新" }], userEvent: "input.type" }));
+  assert.equal(imageBlocks(JSON.parse(saved).notes[0].content).length, 1);
+  assert.ok(view().state.doc.toString().startsWith("改文"));
+  assert.ok(view().state.doc.toString().endsWith("后新文"));
+});
+
+test("a picker cannot silently replace a selected protected picture or report a successful insertion", async () => {
+  await mount(marker);
+  const baseline = saved;
+  await act(() => view().dispatch({ selection: { anchor: 0, head: marker.length } }));
+  await selectImage();
+  assert.equal(saved, baseline);
+  assert.equal(imageBlocks(view().state.doc.toString()).length, 1);
+  assert.match(document.querySelector('[role="alert"]').textContent, /未能插入/);
+  assert.equal(imageButton().disabled, false);
+});
+
+test("a failed save after confirmed image removal keeps the persisted note and reports the unsaved draft", async () => {
+  await mount(marker, "text", true);
+  const baseline = saved;
+  await click(document.querySelector(".remove-image"));
+  await click(document.querySelector('dialog[open] .danger'));
+  assert.equal(saved, baseline);
+  assert.equal(imageBlocks(view().state.doc.toString()).length, 0);
+  assert.match(document.querySelector('[role="alert"]').textContent, /尚未保存/);
+  await act(() => undo(view()));
+  assert.equal(imageBlocks(view().state.doc.toString()).length, 1);
+});
+
+test("native note switching is deferred during image confirmation and cancel never deletes a different note", async () => {
+  await mount(marker);
+  const baseline = saved;
+  window.BetterNotepad.ready = () => window.betterNotepadResume("old");
+  await click(document.querySelector(".remove-image"));
+  await act(() => { assert.equal(window.betterNotepadResume("old"), false); });
+  assert.equal(document.querySelector('[aria-label="便签标题"]').value, "测试便签");
+  await click(document.querySelector('dialog[open] button:not(.danger)'));
+  assert.equal(saved, baseline);
+  assert.equal(document.querySelector('[aria-label="便签标题"]').value, "原有便签");
+  assert.ok(!document.querySelector("dialog[open]"));
+});
+
+test("a confirmation whose picture was already undone does not remove its surviving neighbor", async () => {
+  const other = "![图片](/images/ffffffffffffffffffffffffffffffff.png)";
+  await mount(other);
+  await act(() => view().dispatch({ selection: { anchor: 0 } }));
+  await selectImage();
+  await click(document.querySelector(".remove-image"));
+  await act(() => undo(view()));
+  const baseline = saved;
+  await click(document.querySelector('dialog[open] .danger'));
+  assert.equal(saved, baseline);
+  assert.equal(view().state.doc.toString(), other);
+  assert.match(document.querySelector('[role="alert"]').textContent, /图片已变化/);
 });
 
 test("picker keeps its original insertion point when text changes during image import", async () => {

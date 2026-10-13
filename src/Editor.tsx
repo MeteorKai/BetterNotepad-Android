@@ -2,14 +2,15 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, drawSelection, keymap, placeholder } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, isolateHistory } from "@codemirror/commands";
-import { imageInsertion, isImagePath } from "./images.mjs";
-import { inlineImages } from "./imageWidgets";
+import { imageBlocks, imageInsertion, isImagePath } from "./images.mjs";
+import { confirmedImageRemoval, inlineImages, protectImages } from "./imageWidgets";
 
 export interface EditorHandle { captureImageInsertion(): (path: string | null) => boolean }
 
 const Editor = forwardRef<EditorHandle, {
-  content: string; onChange: (value: string) => void; onViewImage: (path: string) => void;
-}>(function Editor({ content, onChange, onViewImage }, ref) {
+  content: string; onChange: (value: string) => void; onViewImage: (paths: string[], index: number) => void;
+  onRemoveImage: (path: string, remove: () => boolean) => void;
+}>(function Editor({ content, onChange, onViewImage, onRemoveImage }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const change = useRef(onChange);
@@ -25,9 +26,10 @@ const Editor = forwardRef<EditorHandle, {
       const range = insertion.current;
       insertion.current = null;
       if (!path || !range || view.current !== editor) return false;
-      editor.dispatch({ ...imageInsertion(editor.state.doc.toString(), range.from, range.to, path), annotations: isolateHistory.of("full") });
+      const before = editor.state.doc;
+      editor.dispatch({ ...imageInsertion(before.toString(), range.from, range.to, path), annotations: isolateHistory.of("full") });
       editor.focus();
-      return true;
+      return editor.state.doc !== before;
     };
   } }), []);
 
@@ -36,7 +38,7 @@ const Editor = forwardRef<EditorHandle, {
       parent: host.current!,
       state: EditorState.create({ doc: content, extensions: [
         history(), drawSelection(), keymap.of([...defaultKeymap, ...historyKeymap]),
-        EditorView.lineWrapping, placeholder("从这里开始，记下你的想法…"), inlineImages,
+        EditorView.lineWrapping, placeholder("从这里开始，记下你的想法…"), inlineImages, protectImages,
         EditorView.contentAttributes.of({ "aria-label": "便签内容", "autocapitalize": "sentences" }),
         EditorView.updateListener.of(update => {
           if (update.docChanged && insertion.current) insertion.current = {
@@ -63,8 +65,28 @@ const Editor = forwardRef<EditorHandle, {
   }, []);
 
   return <div className="editor-host" ref={host} onClick={event => {
-    const button = (event.target as HTMLElement).closest?.<HTMLButtonElement>(".view-image");
-    if (button && event.currentTarget.contains(button) && isImagePath(button.dataset.imagePath)) onViewImage(button.dataset.imagePath!);
+    const button = (event.target as HTMLElement).closest?.<HTMLButtonElement>(".view-image, .remove-image");
+    if (!button || !event.currentTarget.contains(button) || !isImagePath(button.dataset.imagePath)) return;
+    const path = button.dataset.imagePath!;
+    const editor = view.current, figure = button.closest<HTMLElement>(".inline-image");
+    if (!editor || !figure) return;
+    if (button.classList.contains("view-image")) {
+      const position = editor.posAtDOM(figure), blocks = imageBlocks(editor.state.doc.toString());
+      const index = blocks.findIndex(block => block.from === position && block.path === path);
+      if (index >= 0) onViewImage(blocks.map(block => block.path), index);
+      return;
+    }
+    onRemoveImage(path, () => {
+      if (view.current !== editor || !editor.dom.contains(figure)) return false;
+      const position = editor.posAtDOM(figure);
+      const block = imageBlocks(editor.state.doc.toString()).find(item => item.from === position && item.path === path);
+      if (!block) return false;
+      const line = editor.state.doc.lineAt(block.from);
+      const to = block.from === line.from && block.to === line.to ? Math.min(block.to + 1, editor.state.doc.length) : block.to;
+      editor.dispatch({ changes: { from: block.from, to }, selection: { anchor: block.from }, userEvent: "delete", annotations: [confirmedImageRemoval.of(true), isolateHistory.of("full")] });
+      editor.focus();
+      return true;
+    });
   }} />;
 });
 

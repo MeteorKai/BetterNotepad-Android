@@ -1,10 +1,29 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { bodyText, firstImage, imageBlocks, imageInsertion, isImagePath } from "../src/images.mjs";
+import { bodyText, firstImage, imageBlocks, imageInsertion, isImagePath, textAfterImage } from "../src/images.mjs";
 import { createNote, displayTitle, emptyState, parseState, updateNote } from "../src/notes.mjs";
 
 const path = "/images/0123456789abcdef0123456789abcdef.jpg";
 const marker = `![图片](${path})`;
+
+for (const [suffix, expected, anchor] of [
+  ["", "\n", marker.length + 1],
+  ["\n", "\n", marker.length + 1],
+  ["\n\n正文", "\n\n正文", marker.length + 1],
+  ["\n正文", "\n\n正文", marker.length + 1],
+  ["正文", "\n\n正文", marker.length + 1],
+  [marker, `\n\n${marker}`, marker.length + 1],
+]) {
+  test(`image input gap preserves its neighbor and offers a text position: ${JSON.stringify(suffix)}`, () => {
+    const content = marker + suffix, result = textAfterImage(content, marker.length);
+    const next = content.slice(0, result.changes.from) + result.changes.insert + content.slice(result.changes.from);
+    assert.equal(next, marker + expected);
+    assert.equal(result.selection.anchor, anchor);
+    const repeat = textAfterImage(next, marker.length);
+    assert.equal(repeat.changes.insert, "");
+    assert.equal(repeat.selection.anchor, anchor);
+  });
+}
 
 test("image paths accept only private, generated raster filenames", () => {
   assert.ok(isImagePath(path));

@@ -1,6 +1,8 @@
 package com.betternotepad.android;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ClipData;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Bitmap;
@@ -9,6 +11,7 @@ import android.graphics.Matrix;
 import android.media.ExifInterface;
 import android.net.Uri;
 import android.provider.DocumentsContract;
+import android.provider.MediaStore;
 import android.os.Bundle;
 import android.util.AtomicFile;
 import android.view.View;
@@ -40,10 +43,14 @@ public class MainActivity extends Activity {
     private static final int PICK_IMAGE = 41;
     private static final int EXPORT_BACKUP = 42;
     private static final int OPEN_BACKUP = 43;
+    private static final int TAKE_PHOTO = 44;
     private WebView web;
     private AppUpdater updater;
     private AtomicFile notebook;
     private String imageRequest;
+    private AlertDialog imageDialog;
+    private File cameraFile;
+    private Uri cameraUri;
     private String currentTheme = "warm";
     private final NotebookBridge bridge = new NotebookBridge();
     private volatile String backupRequest;
@@ -147,7 +154,7 @@ public class MainActivity extends Activity {
 
     private void imageResult(String requestId, String field, Object value) {
         runOnUiThread(() -> {
-            if (requestId.equals(imageRequest)) imageRequest = null;
+            if (requestId.equals(imageRequest)) { clearCamera(); imageRequest = null; }
             if (isDestroyed()) return;
             try {
                 String result = new JSONObject().put("requestId", requestId).put(field, value).toString();
@@ -157,7 +164,35 @@ public class MainActivity extends Activity {
     }
 
     private void openImagePicker() {
-        startActivityForResult(new Intent(this, GalleryActivity.class).putExtra("theme", currentTheme), PICK_IMAGE);
+        final String requestId = imageRequest;
+        int theme = "dark".equals(currentTheme) ? android.R.style.Theme_Material_Dialog_Alert : android.R.style.Theme_Material_Light_Dialog_Alert;
+        imageDialog = new AlertDialog.Builder(this, theme).setTitle("插入图片")
+            .setItems(new String[]{"拍照", "从相册选择"}, (dialog, which) -> {
+                try {
+                    if (which == 0) openCamera();
+                    else startActivityForResult(new Intent(this, GalleryActivity.class).putExtra("theme", currentTheme), PICK_IMAGE);
+                } catch (IOException | android.content.ActivityNotFoundException | SecurityException error) {
+                    imageResult(requestId, "error", which == 0 ? "无法打开相机，请检查手机相机是否可用及设备剩余空间。" : "无法打开相册，请重试。");
+                }
+            }).setNegativeButton("取消", (dialog, which) -> imageResult(requestId, "cancelled", true))
+            .setOnCancelListener(dialog -> imageResult(requestId, "cancelled", true)).show();
+    }
+
+    private void openCamera() throws IOException {
+        File directory = new File(getCacheDir(), "camera-capture");
+        if (!directory.isDirectory() && !directory.mkdirs()) throw new IOException("Cannot create camera directory");
+        cameraFile = new File(directory, UUID.randomUUID().toString().replace("-", "") + ".jpg");
+        if (!cameraFile.createNewFile()) throw new IOException("Cannot create capture file");
+        cameraUri = Uri.parse("content://" + getPackageName() + ".camera/" + cameraFile.getName());
+        Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE).putExtra(MediaStore.EXTRA_OUTPUT, cameraUri);
+        intent.setClipData(ClipData.newRawUri("拍照", cameraUri));
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        startActivityForResult(intent, TAKE_PHOTO);
+    }
+
+    private void clearCamera() {
+        if (cameraUri != null) { revokeUriPermission(cameraUri, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION); cameraUri = null; }
+        if (cameraFile != null) { cameraFile.delete(); cameraFile = null; }
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent result) {
@@ -166,13 +201,15 @@ public class MainActivity extends Activity {
             handleBackupResult(requestCode, resultCode, result);
             return;
         }
-        if (requestCode != PICK_IMAGE || imageRequest == null) return;
+        if ((requestCode != PICK_IMAGE && requestCode != TAKE_PHOTO) || imageRequest == null) return;
         final String requestId = imageRequest;
-        if (resultCode != RESULT_OK || result == null || result.getData() == null) {
+        if (resultCode != RESULT_OK || (requestCode == PICK_IMAGE && (result == null || result.getData() == null))) {
             imageResult(requestId, "cancelled", true);
             return;
         }
-        final Uri uri = result.getData();
+        // Cameras commonly return a null Intent when EXTRA_OUTPUT is supplied.
+        final Uri uri = requestCode == TAKE_PHOTO ? cameraUri : result.getData();
+        if (uri == null) { imageResult(requestId, "error", "拍照结果已失效，请重新拍照。"); return; }
         // Decode and persist off the UI thread; never retain the provider URI.
         new Thread(() -> {
             try { imageResult(requestId, "path", importImage(uri)); }
@@ -451,6 +488,8 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if (imageDialog != null) imageDialog.dismiss();
+        clearCamera();
         updater.close();
         web.removeJavascriptInterface("BetterNotepadUpdates");
         new Thread(() -> { synchronized (bridge) { clearBackupStage(); } }, "note-backup-cleanup").start();
